@@ -2,3 +2,4 @@ notes.txt
 kfctl*
 kustomize/
 .cache/
+.ipynb*
