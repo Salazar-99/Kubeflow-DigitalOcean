@@ -1,0 +1,178 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: sms-spam-detection-model-pipeline-
+  annotations: {pipelines.kubeflow.org/kfp_sdk_version: 1.8.10, pipelines.kubeflow.org/pipeline_compilation_time: '2021-12-15T23:35:31.096516',
+    pipelines.kubeflow.org/pipeline_spec: '{"description": "Train an MLP to detect
+      spam messages from csv data", "inputs": [{"default": "https://gs-kubeflow-pipelines.nyc3.digitaloceanspaces.com/clean-spam-data.csv",
+      "name": "url", "optional": true}], "name": "SMS Spam Detection Model Pipeline"}'}
+  labels: {pipelines.kubeflow.org/kfp_sdk_version: 1.8.10}
+spec:
+  entrypoint: sms-spam-detection-model-pipeline
+  templates:
+  - name: download-data
+    container:
+      args: []
+      command:
+      - sh
+      - -exc
+      - |
+        url="$0"
+        output_path="$1"
+        curl_options="$2"
+
+        mkdir -p "$(dirname "$output_path")"
+        curl --get "$url" --output "$output_path" $curl_options
+      - '{{inputs.parameters.url}}'
+      - /tmp/outputs/Data/data
+      - --location
+      image: byrnedo/alpine-curl@sha256:548379d0a4a0c08b9e55d9d87a592b7d35d9ab3037f4936f5ccd09d0b625a342
+    inputs:
+      parameters:
+      - {name: url}
+    outputs:
+      artifacts:
+      - {name: download-data-Data, path: /tmp/outputs/Data/data}
+    metadata:
+      annotations: {author: Alexey Volkov <alexey.volkov@ark-kun.com>, canonical_location: 'https://raw.githubusercontent.com/Ark-kun/pipeline_components/master/components/web/Download/component.yaml',
+        pipelines.kubeflow.org/component_spec: '{"implementation": {"container": {"command":
+          ["sh", "-exc", "url=\"$0\"\noutput_path=\"$1\"\ncurl_options=\"$2\"\n\nmkdir
+          -p \"$(dirname \"$output_path\")\"\ncurl --get \"$url\" --output \"$output_path\"
+          $curl_options\n", {"inputValue": "Url"}, {"outputPath": "Data"}, {"inputValue":
+          "curl options"}], "image": "byrnedo/alpine-curl@sha256:548379d0a4a0c08b9e55d9d87a592b7d35d9ab3037f4936f5ccd09d0b625a342"}},
+          "inputs": [{"name": "Url", "type": "URI"}, {"default": "--location", "description":
+          "Additional options given to the curl bprogram. See https://curl.haxx.se/docs/manpage.html",
+          "name": "curl options", "type": "string"}], "metadata": {"annotations":
+          {"author": "Alexey Volkov <alexey.volkov@ark-kun.com>", "canonical_location":
+          "https://raw.githubusercontent.com/Ark-kun/pipeline_components/master/components/web/Download/component.yaml"}},
+          "name": "Download data", "outputs": [{"name": "Data"}]}', pipelines.kubeflow.org/component_ref: '{"digest":
+          "2f61f2edf713f214934bd286791877a1a3a37f31a4de4368b90e3b76743f1523", "url":
+          "https://raw.githubusercontent.com/kubeflow/pipelines/master/components/web/Download/component.yaml"}',
+        pipelines.kubeflow.org/arguments.parameters: '{"Url": "{{inputs.parameters.url}}",
+          "curl options": "--location"}'}
+      labels:
+        pipelines.kubeflow.org/kfp_sdk_version: 1.8.10
+        pipelines.kubeflow.org/pipeline-sdk-type: kfp
+        pipelines.kubeflow.org/enable_caching: "true"
+  - name: preprocess-data
+    container:
+      args: [--source, /tmp/inputs/source/data, --x-train-output-path, x_train.npy,
+        --x-test-output-path, x_test.npy, --y-train-output-path, y_train.npy, --y-test-output-path,
+        y_test.npy]
+      command:
+      - sh
+      - -ec
+      - |
+        program_path=$(mktemp)
+        printf "%s" "$0" > "$program_path"
+        python3 -u "$program_path" "$@"
+      - "def preprocess_data(source_path, \n                    x_train_output_path,\n\
+        \                    x_test_output_path,\n                    y_train_output_path,\n\
+        \                    y_test_output_path):\n\n    from sklearn.feature_extraction.text\
+        \ import TfidfVectorizer\n    from sklearn.feature_selection import SelectKBest\n\
+        \    from sklearn.feature_selection import f_classif\n    from sklearn.model_selection\
+        \ import train_test_split\n    from typing import List\n    import pandas\
+        \ as pd\n    import numpy as np\n\n    # Load and split data\n    data = pd.read_csv(source_path\
+        \ + '.csv')\n    x_train, x_test, y_train, y_test = train_test_split(data['text'],\
+        \ data['label'], test_size=0.2)\n\n    # Convert to required format\n    x_train\
+        \ = list(x_train)\n    y_train = y_train.to_numpy()\n    x_test = list(x_test)\n\
+        \    y_test = y_test.to_numpy()\n\n    # Function for preprocessing data\n\
+        \    def ngram_vectorize(train_text, train_labels, test_text):\n        #\
+        \ Arguments for vectorizor\n        kwargs = {\n            'ngram_range':\
+        \ NGRAM_RANGE,  # Use 1-grams + 2-grams.\n            'dtype': 'int32',\n\
+        \            'strip_accents': 'unicode',\n            'decode_error': 'replace',\n\
+        \            'analyzer': TOKEN_MODE,  # Split text into word tokens.\n   \
+        \         'min_df': MIN_DOCUMENT_FREQUENCY,\n        }\n\n        vectorizer\
+        \ = TfidfVectorizer(**kwargs)\n\n        # Vectorize training text\n     \
+        \   x_train = vectorizer.fit_transform(train_text)\n        # Vectorize test\
+        \ text\n        x_test = vectorizer.transform(test_text)\n\n        # Select\
+        \ top k features\n        selector = SelectKBest(f_classif, k=TOP_K)\n   \
+        \     selector.fit(x_train, train_labels)\n        x_train = selector.transform(x_train).astype('float32')\n\
+        \        x_test = selector.transform(x_test).astype('float32')\n\n       \
+        \ return x_train, x_test\n\n    # Preprocess data\n    x_train, x_test = ngram_vectorize(x_train,\
+        \ y_train, x_test)\n\n    # Save data\n    np.save(x_train, x_train_output_path)\n\
+        \    np.save(x_test, x_test_output_path)\n    np.save(y_train, y_train_output_path)\n\
+        \    np.save(y_test, y_test_output_path)\n\nimport argparse\n_parser = argparse.ArgumentParser(prog='Preprocess\
+        \ data', description='')\n_parser.add_argument(\"--source\", dest=\"source_path\"\
+        , type=str, required=True, default=argparse.SUPPRESS)\n_parser.add_argument(\"\
+        --x-train-output-path\", dest=\"x_train_output_path\", type=str, required=True,\
+        \ default=argparse.SUPPRESS)\n_parser.add_argument(\"--x-test-output-path\"\
+        , dest=\"x_test_output_path\", type=str, required=True, default=argparse.SUPPRESS)\n\
+        _parser.add_argument(\"--y-train-output-path\", dest=\"y_train_output_path\"\
+        , type=str, required=True, default=argparse.SUPPRESS)\n_parser.add_argument(\"\
+        --y-test-output-path\", dest=\"y_test_output_path\", type=str, required=True,\
+        \ default=argparse.SUPPRESS)\n_parsed_args = vars(_parser.parse_args())\n\n\
+        _outputs = preprocess_data(**_parsed_args)\n"
+      image: salazar99/python-kubeflow:latest
+    inputs:
+      artifacts:
+      - {name: download-data-Data, path: /tmp/inputs/source/data}
+    metadata:
+      labels:
+        pipelines.kubeflow.org/kfp_sdk_version: 1.8.10
+        pipelines.kubeflow.org/pipeline-sdk-type: kfp
+        pipelines.kubeflow.org/enable_caching: "true"
+      annotations: {pipelines.kubeflow.org/component_spec: '{"implementation": {"container":
+          {"args": ["--source", {"inputPath": "source"}, "--x-train-output-path",
+          {"inputValue": "x_train_output_path"}, "--x-test-output-path", {"inputValue":
+          "x_test_output_path"}, "--y-train-output-path", {"inputValue": "y_train_output_path"},
+          "--y-test-output-path", {"inputValue": "y_test_output_path"}], "command":
+          ["sh", "-ec", "program_path=$(mktemp)\nprintf \"%s\" \"$0\" > \"$program_path\"\npython3
+          -u \"$program_path\" \"$@\"\n", "def preprocess_data(source_path, \n                    x_train_output_path,\n                    x_test_output_path,\n                    y_train_output_path,\n                    y_test_output_path):\n\n    from
+          sklearn.feature_extraction.text import TfidfVectorizer\n    from sklearn.feature_selection
+          import SelectKBest\n    from sklearn.feature_selection import f_classif\n    from
+          sklearn.model_selection import train_test_split\n    from typing import
+          List\n    import pandas as pd\n    import numpy as np\n\n    # Load and
+          split data\n    data = pd.read_csv(source_path + ''.csv'')\n    x_train,
+          x_test, y_train, y_test = train_test_split(data[''text''], data[''label''],
+          test_size=0.2)\n\n    # Convert to required format\n    x_train = list(x_train)\n    y_train
+          = y_train.to_numpy()\n    x_test = list(x_test)\n    y_test = y_test.to_numpy()\n\n    #
+          Function for preprocessing data\n    def ngram_vectorize(train_text, train_labels,
+          test_text):\n        # Arguments for vectorizor\n        kwargs = {\n            ''ngram_range'':
+          NGRAM_RANGE,  # Use 1-grams + 2-grams.\n            ''dtype'': ''int32'',\n            ''strip_accents'':
+          ''unicode'',\n            ''decode_error'': ''replace'',\n            ''analyzer'':
+          TOKEN_MODE,  # Split text into word tokens.\n            ''min_df'': MIN_DOCUMENT_FREQUENCY,\n        }\n\n        vectorizer
+          = TfidfVectorizer(**kwargs)\n\n        # Vectorize training text\n        x_train
+          = vectorizer.fit_transform(train_text)\n        # Vectorize test text\n        x_test
+          = vectorizer.transform(test_text)\n\n        # Select top k features\n        selector
+          = SelectKBest(f_classif, k=TOP_K)\n        selector.fit(x_train, train_labels)\n        x_train
+          = selector.transform(x_train).astype(''float32'')\n        x_test = selector.transform(x_test).astype(''float32'')\n\n        return
+          x_train, x_test\n\n    # Preprocess data\n    x_train, x_test = ngram_vectorize(x_train,
+          y_train, x_test)\n\n    # Save data\n    np.save(x_train, x_train_output_path)\n    np.save(x_test,
+          x_test_output_path)\n    np.save(y_train, y_train_output_path)\n    np.save(y_test,
+          y_test_output_path)\n\nimport argparse\n_parser = argparse.ArgumentParser(prog=''Preprocess
+          data'', description='''')\n_parser.add_argument(\"--source\", dest=\"source_path\",
+          type=str, required=True, default=argparse.SUPPRESS)\n_parser.add_argument(\"--x-train-output-path\",
+          dest=\"x_train_output_path\", type=str, required=True, default=argparse.SUPPRESS)\n_parser.add_argument(\"--x-test-output-path\",
+          dest=\"x_test_output_path\", type=str, required=True, default=argparse.SUPPRESS)\n_parser.add_argument(\"--y-train-output-path\",
+          dest=\"y_train_output_path\", type=str, required=True, default=argparse.SUPPRESS)\n_parser.add_argument(\"--y-test-output-path\",
+          dest=\"y_test_output_path\", type=str, required=True, default=argparse.SUPPRESS)\n_parsed_args
+          = vars(_parser.parse_args())\n\n_outputs = preprocess_data(**_parsed_args)\n"],
+          "image": "salazar99/python-kubeflow:latest"}}, "inputs": [{"name": "source",
+          "type": "CSV"}, {"name": "x_train_output_path", "type": "String"}, {"name":
+          "x_test_output_path", "type": "String"}, {"name": "y_train_output_path",
+          "type": "String"}, {"name": "y_test_output_path", "type": "String"}], "name":
+          "Preprocess data"}', pipelines.kubeflow.org/component_ref: '{}', pipelines.kubeflow.org/arguments.parameters: '{"x_test_output_path":
+          "x_test.npy", "x_train_output_path": "x_train.npy", "y_test_output_path":
+          "y_test.npy", "y_train_output_path": "y_train.npy"}'}
+  - name: sms-spam-detection-model-pipeline
+    inputs:
+      parameters:
+      - {name: url}
+    dag:
+      tasks:
+      - name: download-data
+        template: download-data
+        arguments:
+          parameters:
+          - {name: url, value: '{{inputs.parameters.url}}'}
+      - name: preprocess-data
+        template: preprocess-data
+        dependencies: [download-data]
+        arguments:
+          artifacts:
+          - {name: download-data-Data, from: '{{tasks.download-data.outputs.artifacts.download-data-Data}}'}
+  arguments:
+    parameters:
+    - {name: url, value: 'https://gs-kubeflow-pipelines.nyc3.digitaloceanspaces.com/clean-spam-data.csv'}
+  serviceAccountName: pipeline-runner

@@ -3,3 +3,4 @@ kfctl*
 kustomize/
 .cache/
 .ipynb*
+__pycache__/

@@ -1,6 +1,6 @@
 # Kubeflow-DigitalOcean
 We're going to walk through how to set up a Kubernetes cluster using DigitalOcean Kubernetes (DOKS) and how to install
-[Kubeflow](https://www.kubeflow.org/) on the cluster for managing ML Workflows. As a bonus we will create and deploy a simple ML pipeline using [Kubeflow Pipelines](https://www.kubeflow.org/docs/components/pipelines/), one of Kubeflow's core components.
+[Kubeflow](https://www.kubeflow.org/) on the cluster for managing ML Workflows. 
 
 ## Prerequisites
 To complete this project you will need an active [DigitalOcean](https://cloud.digitalocean.com/registrations/new) account and [kubectl](https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/) installed.
@@ -96,7 +96,5 @@ and 12341234. This can be changed by modifying the KfDef file but I ommitted thi
 ![Kubeflow UI](images/UI.png)
 
 We can now begin working with Kubeflow!
-
-## Running a Pipeline
 
 
